@@ -2,7 +2,7 @@
  * linkedlist.c
  *
  *  Created on: Aug 26, 2019
- *      Author: juha
+ *      Author: juha u
  */
 #include <stdio.h>
 #include <stdlib.h>

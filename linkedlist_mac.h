@@ -10,6 +10,7 @@
 
 #include <stdlib.h>
 #include "linkedlist.h"
+#include "linkedlist_ip.h"
 
 
 typedef struct _sync_msg_mac {
@@ -30,7 +31,7 @@ int pop_mac(node_mac_t ** head);
 
 int remove_by_mac(node_mac_t ** head, char * msg);
 
-void print_mac_table(node_mac_t * head);
+void print_mac_table(node_mac_t * head_mac, DList *ip_list);
 
 
 #endif /* LINKEDLIST_MAC_H_ */

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "linkedlist_mac.h"
+#include "linkedlist_ip.h"
 
 node_mac_t * create_mac_table () {
 	node_mac_t * head = NULL;
@@ -64,16 +65,18 @@ int remove_by_mac(node_mac_t ** head, char* msg) {
 	return -1;
 }
 
-void print_mac_table(node_mac_t * head) {
-	printf("\nMAC               IP address\n");
-	if (head->next == NULL){
+void print_mac_table(node_mac_t * head_mac, DList *ip_list) {
+	printf("\n               MAC       IP address\n");
+	if (head_mac->next == NULL){
 		return;
 	}
-	node_mac_t * current = head->next;
-	while (current != NULL) {
-		printf("%s %s\n",
-				current->mac, "192.120.120.120");
-		current = current->next;
+	node_mac_t *current_mac = head_mac->next;
+	size_t current_ip = ip_list->first;
+	while (current_mac != NULL && current_ip != DNULL) {
+		printf("%18s %16s\n",
+				current_mac->mac, ip_list->pool[current_ip].domain);
+		current_mac = current_mac->next;
+		current_ip = ip_list->pool[current_ip].next;
 	}
 	printf("\n");
 }

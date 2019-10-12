@@ -9,13 +9,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <signal.h>
 #include "linkedlist.h"
 #include "linkedlist_mac.h"
+#include "linkedlist_ip.h"
+#include "linkedlist_pid.h"
 #include "test.h"
+#include "shmem.h"
 
-#define SOCKET_NAME "/tmp/DemoSocket" //needs to be a path. in tmp the output will be destroyed
+#define SOCKET_NAME "/tmp/DemoSocket" //needs to be a path. if located in /tmp the output will be destroyed
 #define BUFFER_SIZE 128
 #define MAX_CLIENT_SUPPORTED 32
 
@@ -35,7 +40,6 @@ static void initialize_monitor_fd_set(){
 		monitored_fd_set[i] = -1;
 	}
 }
-
 
 /*Add a new FD to the monitored fd_set array*/
 static void add_to_monitored_fd_set(int skt_fd){
@@ -78,8 +82,7 @@ static void refresh_fd_set(fd_set *fd_set_ptr){
 		}
 	}
 }
-/* Get the numerical max value among all FDs which server
- * is monitoring*/
+/* Get the numerical max value among all FDs which server is monitoring*/
 
 static int get_max_fd(){
 	int i = 0;
@@ -154,6 +157,13 @@ int main(int argc, char *argv[]) {
 	char buffer[BUFFER_SIZE];
 	node_t * head = create_table();
 	node_mac_t * mac_head = create_mac_table();
+	node_pid_t * pid_head = create_pid_table();
+	DList *ip_list;
+	DList *ip_list_mem;
+	ip_list = (DList *)malloc(sizeof(DList));
+	ip_list_mem = (DList *)malloc(sizeof(DList));
+	dlist_init(ip_list);
+	//printf("sizof DList - %d\n", sizeof(DList));
 	//pop_linkedlist(head);
 
 	msg_body_t b;
@@ -228,8 +238,9 @@ int main(int argc, char *argv[]) {
 				"1 - Create routing table entry\n"
 				"2 - Update routing table entry\n"
 				"3 - Delete routing table entry\n"
-				"4 - Create MAC table entry\n"
-				"5 - Delete MAC table entry\n");
+				"4 - Create ARP table entry\n"
+				"5 - Delete ARP table entry\n"
+				"6 - Flush routing and ARP table");
 
 		refresh_fd_set(&readfds);
 		print_fd_set();
@@ -257,7 +268,8 @@ int main(int argc, char *argv[]) {
 			if (head->next != NULL) {
 				node_t * current = head->next;
 				smes.op_code = CREATE;
-				while (current != NULL) {
+				//--------todo - send also the MAC table------------
+				while (current != NULL) { //send the routing table
 					smes.msg_body = current->msg_body;
 					ret = write(data_socket, &smes, sizeof(sync_msg_t));
 					if(ret == -1) {
@@ -268,6 +280,12 @@ int main(int argc, char *argv[]) {
 				}
 			}
 			smes.op_code = PRINT;
+			ret = write(data_socket, &smes, sizeof(sync_msg_t));
+			if(ret == -1) {
+				perror("write");
+				break;
+			}
+			smes.op_code = GETPID;
 			ret = write(data_socket, &smes, sizeof(sync_msg_t));
 			if(ret == -1) {
 				perror("write");
@@ -307,34 +325,82 @@ int main(int argc, char *argv[]) {
 				printf( "\nProvide details (MAC_address IP_address):\n");
 				scanf("%s %s", smes_mac.mac, macip);
 				push_mac(mac_head, smes_mac.mac);
-				print_mac_table(mac_head);
+				dnode_push(ip_list, macip); //no memory yet allocated to it
+				create_and_write_shared_memory (SHMEM_KEY, ip_list, sizeof(DList));
+				int rc = read_shared_memory(SHMEM_KEY, ip_list_mem, sizeof(DList), sizeof(DList));
+				if(rc < 0){
+					printf("Error reading from shared memory\n");
+					return 0;
+				}
+				print_mac_table(mac_head, ip_list_mem);
 				send_print_mac(connection_socket, &smes_mac, CREATE_MAC);
 			}
 			else if(i == '5') {
 				char macip[16];
 				printf( "\nProvide details (MAC_address IP_address):\n");
 				scanf("%s %s", smes_mac.mac, macip);
-				remove_by_mac(&mac_head, smes_mac.mac);
-				print_mac_table(mac_head);
+				remove_by_mac(&mac_head, smes_mac.mac); //not working perfectly, can by mistake remove only mac or ip
+				dnode_findstr_pop(ip_list, macip); //to improve, create single function that checks mac & ip found in same place before removal
+				create_and_write_shared_memory (SHMEM_KEY, ip_list, sizeof(DList));
+				int rc = read_shared_memory(SHMEM_KEY, ip_list_mem, sizeof(DList), sizeof(DList));
+				if(rc < 0){
+					printf("Error reading from shared memory\n");
+					return 0;
+				}
+				print_mac_table(mac_head, ip_list_mem);
 				send_print_mac(connection_socket, &smes_mac, DELETE_MAC);
+			}
+			else if(i == '6') {
+				while(pop_mac(&mac_head) > -1) { //flush mac table from server
+				}
+				while(pop(&head) > -1) { //flush
+				}
+				while(ip_list->last != DNULL) {
+					dnode_pop(ip_list);
+				}
+				create_and_write_shared_memory (SHMEM_KEY, ip_list, sizeof(DList));
+				node_pid_t *pdd = pid_head;
+				while(pdd->next != NULL) {
+					kill(pdd->next->pid, SIGUSR1); //send signal to clients to flush their tables
+					pdd = pdd->next;
+				}
+
 			}
 			else {
 				printf("invalid choice\n");
 			}
 		}
-		else /* Data arrives on some other client FD*/ //change - not needed?
-		{
-			/*Find the client who has sent us the data request*/
+		else { /* Data arrives from client to either add the PID or remove it, if it exists
+			Find the client who has sent us the data request*/
 			i = 0, comm_socket_fd = -1;
 			for(; i<MAX_CLIENT_SUPPORTED; i++) {
 				if(FD_ISSET(monitored_fd_set[i], &readfds)) {
 					comm_socket_fd = monitored_fd_set[i];
-					/*Close socket*/
-					close(comm_socket_fd);
-					//client_result[i] = 0;
-					remove_from_monitored_fd_set(comm_socket_fd);
-					printf("Client closed connection?\n");
-					continue; /*Go to select() and block*/
+
+					/*Prepare the buffer to recv the data*/
+					memset(buffer,0,BUFFER_SIZE);
+					/*Wait for next data packet*/
+					/*Server is blocked here. Waiting for the data to arrive from client
+					 * 'read' is a blocking system call*/
+					//printf("Waiting for data from the client\n");
+					ret = read(comm_socket_fd, buffer, BUFFER_SIZE);
+
+					if(ret == -1) {
+						perror("read");
+						exit(EXIT_FAILURE);
+					}
+					/*Add received summand*/
+					pid_t pd;
+					memcpy(&pd, buffer, sizeof(pid_t));
+					if(remove_by_pid(&pid_head, pd) == -1) {
+						push_pid(pid_head, pd);
+						printf("pushed pid %d\n", (int)pd);
+					}
+					else {
+						close(monitored_fd_set[i]);
+						remove_from_monitored_fd_set(monitored_fd_set[i]);
+						printf("removed pid %d\n", (int)pd);
+					}
 				}
 			}
 		}
@@ -344,8 +410,9 @@ int main(int argc, char *argv[]) {
 	close(connection_socket);
 	remove_from_monitored_fd_set(connection_socket);
 	printf("connection closed..\n");
+	free(ip_list);
 
-	/* Server should release resources before getting terminated
+	/* Serverould release resources before getting terminated
 	 * Unlink the socket
 	 */
 	unlink(SOCKET_NAME);

@@ -28,14 +28,14 @@ all: ipcserv
 ipcserv: $(SERVER_OBJS) $(CLIENT_OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: GCC C Linker'
-	gcc  -o "server" $(SERVER_OBJS) $(USER_OBJS) $(LIBS) -lrt
+	gcc  -o "server" $(SERVER_OBJS) $(USER_OBJS) $(LIBS) -lrt #-lrt = link rt library (with shm_open)
 	gcc  -o "client" $(CLIENT_OBJS) $(USER_OBJS) $(LIBS) -lrt
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) $(EXECUTABLES)$(SERVER_OBJS)$(CLIENT_OBJS)$(C_DEPS) server
+	-$(RM) $(EXECUTABLES)$(SERVER_OBJS)$(CLIENT_OBJS)$(C_DEPS) server client
 	-@echo ' '
 
 .PHONY: all clean dependents

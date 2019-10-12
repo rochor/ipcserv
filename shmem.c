@@ -13,9 +13,11 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
+#include "linkedlist_ip.h"
+#include "shmem.h"
 
 int create_and_write_shared_memory (char *mmap_key,
-		char * value, unsigned int size) {
+		DList *ip_list, unsigned int size) {
 	int shm_fd;
 
 	/*Create a shared memory object in kernel space.
@@ -45,7 +47,7 @@ int create_and_write_shared_memory (char *mmap_key,
 	 * performed in shared memory which resides in kernel.
 	 */
 	memset(shm_reg, 0, size);
-	memcpy(shm_reg, value, size);
+	memcpy(shm_reg, ip_list, size);
 	munmap(shm_reg, size);
 	/*Reader process will not be able to read shm if writer unlink the name below */
 	//shm_unlink(mmap_key);
@@ -53,7 +55,7 @@ int create_and_write_shared_memory (char *mmap_key,
 	return size;
 }
 
-int read_shared_memory(char *mmap_key, char *buffer, unsigned int buff_size, unsigned int bytes_to_read) {
+int read_shared_memory(char *mmap_key, DList *ip_list, unsigned int list_size, unsigned int bytes_to_read) {
 
 	int shm_fd = 0, rc = 0;
 
@@ -70,7 +72,7 @@ int read_shared_memory(char *mmap_key, char *buffer, unsigned int buff_size, uns
 		return -1;
 	}
 
-	memcpy(buffer, shm_reg, bytes_to_read);
+	memcpy(ip_list, shm_reg, bytes_to_read);
 	rc = munmap(shm_reg, bytes_to_read);
 
 	if(rc < 0) {

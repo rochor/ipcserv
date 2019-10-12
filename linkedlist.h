@@ -17,7 +17,8 @@ typedef enum {
 	PRINT = 4,
 	CREATE_MAC = 5,
 	DELETE_MAC = 6,
-	PRINT_MAC = 7
+	PRINT_MAC = 7,
+	GETPID = 8
 }OPCODE;
 
 typedef struct _msg_body {
